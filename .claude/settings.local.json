@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(curl -sfo /dev/null http://localhost:3000/)",
+      "Bash(curl -sw '%{http_code}' -o /dev/null http://localhost:3000__TRACKED_VAR__)",
+      "Bash(curl -sw \"\\\\n%{http_code}\\\\n\" http://localhost:3000/api/properties)"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+node_modules
+.next
+.env*.local
+.DS_Store
+*.log
+next-env.d.ts
+
+# Runtime data — auth tokens, customer conversations, case state, uploaded photos.
+# Auto-regenerated from seed (lib/data/properties.ts) on first run.
+database/sessions.json
+database/conversations.csv
+database/cases.csv
+database/properties.csv
+database/photos/*
+!database/photos/.gitkeep
