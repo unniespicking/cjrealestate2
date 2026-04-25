@@ -8,6 +8,9 @@ const DB_DIR = path.join(process.cwd(), "database");
 const CSV_PATH = path.join(DB_DIR, "properties.csv");
 export const PHOTOS_DIR = path.join(DB_DIR, "photos");
 
+// Vercel/Lambda-style serverless filesystems are read-only — skip CSV entirely.
+const SERVERLESS = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
 const HEADERS = [
   "id", "action", "address", "suburb", "postcode",
   "price", "priceNumeric",
@@ -92,6 +95,7 @@ async function ensureSeed() {
 }
 
 export async function getProperties(): Promise<Property[]> {
+  if (SERVERLESS) return seedProperties;
   await ensureSeed();
   try {
     const text = await fs.readFile(CSV_PATH, "utf-8");

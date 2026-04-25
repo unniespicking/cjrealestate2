@@ -9,9 +9,16 @@ import { getCurrentStaff } from "@/lib/auth";
 import { postToSlack } from "@/lib/slack-webhook";
 import { Property } from "@/lib/data/properties";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  const all = await getProperties();
-  return NextResponse.json({ properties: all });
+  try {
+    const all = await getProperties();
+    return NextResponse.json({ properties: all });
+  } catch (err: any) {
+    console.error("/api/properties GET failed:", err?.message);
+    return NextResponse.json({ properties: [], error: err?.message }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {

@@ -18,9 +18,11 @@ export default function Lease() {
     fetch("/api/properties")
       .then((r) => r.json())
       .then((d) => {
-        setAll(d.properties.filter((p: Property) => p.action === "lease"));
-        setLoading(false);
-      });
+        const list: Property[] = Array.isArray(d?.properties) ? d.properties : [];
+        setAll(list.filter((p) => p.action === "lease"));
+      })
+      .catch(() => setAll([]))
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = useMemo(

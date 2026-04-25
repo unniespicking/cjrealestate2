@@ -18,10 +18,9 @@ export default function BuyPage() {
   useEffect(() => {
     fetch("/api/properties")
       .then((r) => r.json())
-      .then((d) => {
-        setAll(d.properties);
-        setLoading(false);
-      });
+      .then((d) => setAll(Array.isArray(d?.properties) ? d.properties : []))
+      .catch(() => setAll([]))
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = useMemo(() => {
