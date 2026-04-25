@@ -78,20 +78,28 @@ function fromRow(r: Record<string, string>): Property {
 }
 
 async function ensureSeed() {
-  await fs.mkdir(PHOTOS_DIR, { recursive: true });
   try {
+    await fs.mkdir(PHOTOS_DIR, { recursive: true });
     await fs.access(CSV_PATH);
   } catch {
-    const csv = writeCsvRows(HEADERS, seedProperties.map(toRow));
-    await fs.writeFile(CSV_PATH, csv, "utf-8");
+    try {
+      const csv = writeCsvRows(HEADERS, seedProperties.map(toRow));
+      await fs.writeFile(CSV_PATH, csv, "utf-8");
+    } catch {
+      // Read-only filesystem (e.g. Vercel serverless): caller falls back to seed.
+    }
   }
 }
 
 export async function getProperties(): Promise<Property[]> {
   await ensureSeed();
-  const text = await fs.readFile(CSV_PATH, "utf-8");
-  const { rows } = parseCsv(text);
-  return rows.map(fromRow);
+  try {
+    const text = await fs.readFile(CSV_PATH, "utf-8");
+    const { rows } = parseCsv(text);
+    return rows.map(fromRow);
+  } catch {
+    return seedProperties;
+  }
 }
 
 export async function getProperty(id: string): Promise<Property | undefined> {
