@@ -5,6 +5,9 @@ import { writeCsvRows, parseCsv } from "./csv";
 
 const CSV_PATH = path.join(process.cwd(), "database", "conversations.csv");
 
+// Vercel/Lambda-style serverless filesystems are read-only — skip persistence.
+const SERVERLESS = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
 const HEADERS = [
   "id",
   "started_at",
@@ -34,11 +37,15 @@ export type Conversation = {
 };
 
 async function ensure() {
-  await fs.mkdir(path.dirname(CSV_PATH), { recursive: true });
   try {
+    await fs.mkdir(path.dirname(CSV_PATH), { recursive: true });
     await fs.access(CSV_PATH);
   } catch {
-    await fs.writeFile(CSV_PATH, writeCsvRows(HEADERS, []), "utf-8");
+    try {
+      await fs.writeFile(CSV_PATH, writeCsvRows(HEADERS, []), "utf-8");
+    } catch {
+      // Read-only filesystem — readers/writers below will no-op.
+    }
   }
 }
 
@@ -52,8 +59,14 @@ function safeJson<T>(v: string, fallback: T): T {
 }
 
 export async function getConversations(): Promise<Conversation[]> {
+  if (SERVERLESS) return [];
   await ensure();
-  const text = await fs.readFile(CSV_PATH, "utf-8");
+  let text: string;
+  try {
+    text = await fs.readFile(CSV_PATH, "utf-8");
+  } catch {
+    return [];
+  }
   const { rows } = parseCsv(text);
   return rows.map((r) => ({
     id: r.id,
@@ -71,6 +84,7 @@ export async function getConversations(): Promise<Conversation[]> {
 }
 
 export async function saveConversation(c: Conversation) {
+  if (SERVERLESS) return;
   const all = await getConversations();
   all.push(c);
   const rows = all.map((x) => ({
@@ -86,10 +100,17 @@ export async function saveConversation(c: Conversation) {
     summary: x.summary,
     transcript: JSON.stringify(x.transcript),
   }));
-  await fs.writeFile(CSV_PATH, writeCsvRows(HEADERS, rows), "utf-8");
+  try {
+    await fs.writeFile(CSV_PATH, writeCsvRows(HEADERS, rows), "utf-8");
+  } catch {
+    // Read-only filesystem — drop the write.
+  }
 }
 
 export async function generateConversationId(): Promise<string> {
+  if (SERVERLESS) {
+    return `conv-${Date.now().toString(36)}`;
+  }
   const all = await getConversations();
   return `conv-${String(all.length + 1).padStart(4, "0")}`;
 }

@@ -6,6 +6,9 @@ import { writeCsvRows, parseCsv } from "./csv";
 
 const CSV_PATH = path.join(process.cwd(), "database", "cases.csv");
 
+// Vercel/Lambda-style serverless filesystems are read-only — skip persistence.
+const SERVERLESS = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
 const HEADERS = [
   "id",
   "posted_at",
@@ -35,24 +38,38 @@ export type Case = {
 };
 
 async function ensure() {
-  await fs.mkdir(path.dirname(CSV_PATH), { recursive: true });
   try {
+    await fs.mkdir(path.dirname(CSV_PATH), { recursive: true });
     await fs.access(CSV_PATH);
   } catch {
-    await fs.writeFile(CSV_PATH, writeCsvRows(HEADERS, []), "utf-8");
+    try {
+      await fs.writeFile(CSV_PATH, writeCsvRows(HEADERS, []), "utf-8");
+    } catch {
+      // Read-only filesystem — readers/writers below will no-op.
+    }
   }
 }
 
 export async function listCases(): Promise<Case[]> {
+  if (SERVERLESS) return [];
   await ensure();
-  const text = await fs.readFile(CSV_PATH, "utf-8");
-  const { rows } = parseCsv(text);
-  return rows as unknown as Case[];
+  try {
+    const text = await fs.readFile(CSV_PATH, "utf-8");
+    const { rows } = parseCsv(text);
+    return rows as unknown as Case[];
+  } catch {
+    return [];
+  }
 }
 
 async function writeAll(all: Case[]) {
+  if (SERVERLESS) return;
   const rows = all.map((c) => ({ ...c })) as unknown as Record<string, string>[];
-  await fs.writeFile(CSV_PATH, writeCsvRows(HEADERS, rows), "utf-8");
+  try {
+    await fs.writeFile(CSV_PATH, writeCsvRows(HEADERS, rows), "utf-8");
+  } catch {
+    // Read-only filesystem — drop the write.
+  }
 }
 
 export async function createCase(input: {
@@ -63,8 +80,6 @@ export async function createCase(input: {
   subtitle?: string;
   category?: string;
 }): Promise<Case> {
-  await ensure();
-  const all = await listCases();
   const c: Case = {
     id: `case-${crypto.randomBytes(4).toString("hex")}`,
     posted_at: new Date().toISOString(),
@@ -78,12 +93,15 @@ export async function createCase(input: {
     claimed_by_name: "",
     claimed_at: "",
   };
+  if (SERVERLESS) return c;
+  const all = await listCases();
   all.push(c);
   await writeAll(all);
   return c;
 }
 
 export async function setCaseTs(id: string, channel_id: string, message_ts: string) {
+  if (SERVERLESS) return;
   const all = await listCases();
   const idx = all.findIndex((c) => c.id === id);
   if (idx === -1) return;
@@ -95,6 +113,7 @@ export async function claimCase(
   id: string,
   user: { id: string; name: string }
 ): Promise<Case | null> {
+  if (SERVERLESS) return null;
   const all = await listCases();
   const idx = all.findIndex((c) => c.id === id);
   if (idx === -1) return null;
@@ -110,6 +129,7 @@ export async function claimCase(
 }
 
 export async function getCase(id: string): Promise<Case | null> {
+  if (SERVERLESS) return null;
   const all = await listCases();
   return all.find((c) => c.id === id) ?? null;
 }
