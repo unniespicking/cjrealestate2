@@ -5,6 +5,20 @@ import { postThreadReply } from "@/lib/slack-webhook";
 // Slack POSTs here whenever a button / interactive component is clicked.
 // See: https://api.slack.com/interactivity/handling
 
+// GET is a health/diagnostic check — visit in browser to verify env wiring
+// and that the route is reachable from the public URL Slack will hit.
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    route: "/api/slack/interactions",
+    env: {
+      SLACK_BOT_TOKEN: !!process.env.SLACK_BOT_TOKEN,
+      SLACK_SIGNING_SECRET: !!process.env.SLACK_SIGNING_SECRET,
+    },
+    note: "Slack will POST to this URL. Configure it in Slack App > Interactivity & Shortcuts.",
+  });
+}
+
 function verifySignature(req: Request, rawBody: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET;
   if (!secret) {
