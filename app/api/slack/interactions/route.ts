@@ -88,7 +88,11 @@ export async function POST(req: Request) {
   const display = userId ? `<@${userId}>` : userName;
 
   console.log("interactions: posting claim reply", { channelId, messageTs, user: userName });
-  const result = await postThreadReply(channelId, messageTs, `${display} clicked Claim.`);
+  const result = await postThreadReply(
+    channelId,
+    messageTs,
+    `${display} has taken ownership of this case. ${display} will follow up on this case and provide updates.`
+  );
   if (!result.ok) {
     console.error("interactions: thread reply failed", result.error);
   }
