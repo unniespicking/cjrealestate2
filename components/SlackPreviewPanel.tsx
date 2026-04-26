@@ -253,7 +253,7 @@ function SlackPostCard({
                   {post.transcript.map((t, i) => (
                     <div key={i}>
                       <span className={clsx("font-semibold mr-2", t.role === "user" ? "text-copper" : "text-ink-muted")}>
-                        {t.role === "user" ? "Visitor" : "Jin"}:
+                        {t.role === "user" ? "Visitor" : "CJ RealEstate Agent"}:
                       </span>
                       <span>{t.text}</span>
                     </div>

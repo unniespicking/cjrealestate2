@@ -47,7 +47,7 @@ export function ConversationsClient({ conversations }: { conversations: Conversa
                         m.role === "user" ? "text-copper" : "text-ink-muted"
                       )}
                     >
-                      {m.role === "user" ? "Visitor" : "Jin"}
+                      {m.role === "user" ? "Visitor" : "CJ RealEstate Agent"}
                     </span>
                     <p className="text-sm">{m.text}</p>
                   </div>

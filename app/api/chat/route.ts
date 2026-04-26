@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 // Proxy for Gemini API. Demo mode (no GEMINI_API_KEY): returns a canned reply.
 // With key: calls the configured Gemini model with the CJ system prompt.
 
-const SYSTEM_PROMPT = `You are Jin, the AI concierge for CJ Real Estate — a Sydney Inner West property agency.
+const SYSTEM_PROMPT = `You are CJ RealEstate Agent, the AI concierge for CJ Real Estate — a Sydney Inner West property agency.
 
 # Context
 - Office: Shop 5, 46 Walker St, Rhodes NSW 2138 · 02 9739 6000

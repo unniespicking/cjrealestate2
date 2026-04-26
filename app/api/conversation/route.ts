@@ -6,7 +6,7 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 const SUMMARIZE_PROMPT = `You are a real estate intake assistant for CJ Real Estate, a Sydney Inner West agency covering Rhodes, Newington, Meadowbank, Liberty Grove, Wentworth Point, Lidcombe, Silverwater, and Ermington.
 
-Read the conversation between a website visitor and our AI concierge "Jin". Extract structured information.
+Read the conversation between a website visitor and our AI concierge "CJ RealEstate Agent". Extract structured information.
 
 Output ONLY a single valid JSON object — no markdown, no commentary.
 
@@ -42,7 +42,7 @@ async function summarize(messages: any[], language: string): Promise<SummaryShap
   }
 
   const transcript = messages
-    .map((m: any) => `${m.role === "user" ? "Visitor" : "Jin"}: ${m.text}`)
+    .map((m: any) => `${m.role === "user" ? "Visitor" : "CJ RealEstate Agent"}: ${m.text}`)
     .join("\n");
 
   const body = {

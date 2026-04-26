@@ -42,7 +42,7 @@ const inspections = [
 ];
 
 const messages = [
-  { from: "John K.", last: "Will the balcony fit a 6-person dining table?", ago: "3m", channel: "Jin chatbot" },
+  { from: "John K.", last: "Will the balcony fit a 6-person dining table?", ago: "3m", channel: "CJ RealEstate Agent chatbot" },
   { from: "Jenny L.", last: "Can we bring our accountant to the inspection?", ago: "17m", channel: "SMS" },
   { from: "Peter S.", last: "Following up on our appraisal from Tuesday…", ago: "1h", channel: "Email" },
 ];

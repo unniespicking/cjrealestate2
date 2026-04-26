@@ -13,7 +13,7 @@ export default async function ConversationsPage() {
           <p className="text-xs text-ink-muted">CSV: <span className="font-mono">database/conversations.csv</span></p>
           <h1 className="display-md mt-1">AI conversations · {all.length}</h1>
           <p className="text-sm text-ink-muted mt-1">
-            Every Jin chat is summarised by Gemini, logged to CSV, and posted to <span className="font-mono">#ai_conversation_received</span>.
+            Every CJ RealEstate Agent chat is summarised by Gemini, logged to CSV, and posted to <span className="font-mono">#ai_conversation_received</span>.
           </p>
         </div>
         <Link href="/portal/staff" className="btn-ghost text-sm">← Dashboard</Link>
