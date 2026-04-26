@@ -61,42 +61,55 @@ export async function POST(req: Request) {
     id: payload.user?.id ?? "",
     name: payload.user?.name ?? payload.user?.username ?? "Unknown",
   };
-  const display = payload.user?.name
-    ? `<@${slackUser.id}>` // Slack will render as user mention
-    : slackUser.name;
+  const display = slackUser.id ? `<@${slackUser.id}>` : slackUser.name;
 
-  const before = await getCase(caseId);
-  const after = await claimCase(caseId, slackUser);
-  const channelId = payload.channel?.id ?? before?.channel_id ?? "";
-  const messageTs = payload.message?.ts ?? before?.message_ts ?? "";
-
-  if (!after || !channelId || !messageTs) {
+  const channelId = payload.channel?.id ?? "";
+  const messageTs = payload.message?.ts ?? "";
+  if (!channelId || !messageTs) {
     return NextResponse.json({ ok: true });
   }
 
-  // If already claimed by someone else, just reply in thread, don't change original.
-  const wasFreshClaim = !before?.claimed_by_user_id;
+  const originalBlocks: any[] = payload.message?.blocks ?? [];
+  const headerText =
+    originalBlocks.find((b) => b.type === "header")?.text?.text ??
+    payload.message?.text ??
+    "";
 
-  if (wasFreshClaim) {
-    // 1. Update original — strip Claim button, add "Claimed by" context.
-    const originalBlocks = payload.message?.blocks ?? [];
-    const newBlocks = buildClaimedBlocks(originalBlocks, slackUser.name, after.claimed_at);
-    await updateMessage(channelId, messageTs, newBlocks, after.title);
+  // CSV is best-effort (no-op on serverless). The message blocks are the
+  // authoritative source of truth for whether the case has been claimed.
+  const before = await getCase(caseId).catch(() => null);
+  const claimedFromBlocks = originalBlocks.some(
+    (b) =>
+      b.type === "context" &&
+      Array.isArray(b.elements) &&
+      b.elements.some(
+        (e: any) => typeof e?.text === "string" && e.text.includes("Claimed by")
+      )
+  );
+  const alreadyClaimed = claimedFromBlocks || !!before?.claimed_by_user_id;
 
-    // 2. Post thread reply.
+  if (alreadyClaimed) {
+    const owner = before?.claimed_by_name;
     await postThreadReply(
       channelId,
       messageTs,
-      `${display} has claimed this case (${caseId}). They'll reach out to the customer next.`
+      owner
+        ? `${display} also tried to claim — already owned by *${owner}*.`
+        : `${display} also tried to claim — already taken.`
     );
-  } else {
-    // Already claimed — just note the duplicate attempt in thread.
-    await postThreadReply(
-      channelId,
-      messageTs,
-      `${display} also tried to claim — already owned by *${before?.claimed_by_name}*.`
-    );
+    return NextResponse.json({ ok: true });
   }
+
+  const claimedAt = new Date().toISOString();
+  await claimCase(caseId, slackUser).catch(() => null);
+
+  const newBlocks = buildClaimedBlocks(originalBlocks, slackUser.name, claimedAt);
+  await updateMessage(channelId, messageTs, newBlocks, headerText);
+  await postThreadReply(
+    channelId,
+    messageTs,
+    `${display} has claimed this case (${caseId}). They'll reach out to the customer next.`
+  );
 
   return NextResponse.json({ ok: true });
 }

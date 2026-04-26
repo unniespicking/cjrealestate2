@@ -288,7 +288,7 @@ function SlackPostCard({
                 style={{ backgroundColor: "#007a5a" }}
                 className="text-white text-xs font-semibold px-3 py-1.5 inline-flex items-center gap-1.5 hover:opacity-90 cursor-pointer"
               >
-                <Hand size={12} /> Claim this case
+                <Hand size={12} /> Click to Claim
               </button>
             )}
             <div className="text-[10px] mt-1.5 font-mono opacity-50">

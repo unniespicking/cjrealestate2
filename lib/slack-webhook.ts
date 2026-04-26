@@ -26,6 +26,11 @@ function getWebhookFor(channel: string): string | undefined {
   }
 }
 
+const CLAIM_CHANNELS = new Set([
+  "#ai_conversation_received",
+  "#customer-direct-requests",
+]);
+
 function buildBlocks(block: SlackBlock, caseId: string) {
   const blocks: any[] = [
     {
@@ -52,6 +57,21 @@ function buildBlocks(block: SlackBlock, caseId: string) {
     type: "context",
     elements: [{ type: "mrkdwn", text: `_Case ID: \`${caseId}\`_` }],
   });
+  if (CLAIM_CHANNELS.has(block.channel)) {
+    blocks.push({
+      type: "actions",
+      block_id: "claim_actions",
+      elements: [
+        {
+          type: "button",
+          action_id: "claim_case",
+          value: caseId,
+          style: "primary",
+          text: { type: "plain_text", text: "Click to Claim", emoji: true },
+        },
+      ],
+    });
+  }
   return blocks;
 }
 
