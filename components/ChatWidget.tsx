@@ -15,7 +15,7 @@ const END_TOKEN = /\[END_CONVERSATION\]/i;
 const dict = {
   EN: {
     openerGreeting:
-      "Hi! I'm Jin — the CJ Real Estate concierge. Ask me anything about buying, selling, leasing, or your tenancy.",
+      "Hi! I'm CJ RealEstate Agent — the CJ Real Estate concierge. Ask me anything about buying, selling, leasing, or your tenancy.",
     chipBuy: "I want to buy",
     chipSell: "I want to sell",
     chipLease: "Looking to rent",
@@ -25,7 +25,7 @@ const dict = {
     youAre: "You're chatting with",
     privacy: "Conversations are reviewed and protected under CJ's Privacy Policy.",
     footer: "Powered by Gemini · multilingual (EN · 中文 · 한국어)",
-    thinking: "Jin is typing…",
+    thinking: "CJ RealEstate Agent is typing…",
     capReached:
       "We've covered a lot — let me hand this to a CJ agent who can pick it up from here.",
     endedNote: "This conversation is closed.",
@@ -34,7 +34,7 @@ const dict = {
   },
   KO: {
     openerGreeting:
-      "안녕하세요! CJ Real Estate 컨시어지 Jin입니다. 매매·매도·임대·임차 관련 질문 무엇이든 물어보세요.",
+      "안녕하세요! CJ Real Estate 컨시어지 CJ RealEstate Agent입니다. 매매·매도·임대·임차 관련 질문 무엇이든 물어보세요.",
     chipBuy: "매매 문의",
     chipSell: "매도 감정",
     chipLease: "임대 검색",
@@ -44,7 +44,7 @@ const dict = {
     youAre: "대화 상대:",
     privacy: "대화는 검토될 수 있으며, CJ 개인정보보호방침에 따라 보호됩니다.",
     footer: "Powered by Gemini · 3개국어 지원 (EN · 中文 · 한국어)",
-    thinking: "Jin이 답변 중…",
+    thinking: "CJ RealEstate Agent가 답변 중…",
     capReached:
       "충분히 이야기 나눴습니다. 이제 CJ 담당자에게 연결해 드리겠습니다.",
     endedNote: "대화가 종료되었습니다.",
@@ -53,7 +53,7 @@ const dict = {
   },
   ZH: {
     openerGreeting:
-      "您好!我是CJ Real Estate的AI礼宾 Jin。买房、卖房、租赁、租户事宜,任何问题都可以问我。",
+      "您好!我是CJ Real Estate的AI礼宾 CJ RealEstate Agent。买房、卖房、租赁、租户事宜,任何问题都可以问我。",
     chipBuy: "我想买房",
     chipSell: "我想卖房",
     chipLease: "寻找出租",
@@ -63,7 +63,7 @@ const dict = {
     youAre: "正在与您交谈:",
     privacy: "对话可能会被审阅,受CJ隐私政策保护。",
     footer: "由 Gemini 驱动 · 支持 EN · 中文 · 한국어",
-    thinking: "Jin 正在输入…",
+    thinking: "CJ RealEstate Agent 正在输入…",
     capReached: "我们已经聊了不少 — 让经纪人继续为您服务。",
     endedNote: "对话已结束。",
     reset: "重新开始",
@@ -202,7 +202,7 @@ export function ChatWidget() {
           className="fixed bottom-6 right-6 z-40 bg-ink text-paper px-5 py-4 shadow-xl flex items-center gap-2.5 hover:bg-copper transition-all group"
         >
           <Sparkles size={18} className="text-copper group-hover:text-paper transition" />
-          <span className="text-sm font-medium tracking-wide">Ask Jin</span>
+          <span className="text-sm font-medium tracking-wide">Ask CJ RealEstate Agent</span>
           <span className="w-2 h-2 bg-copper pulse-dot" />
         </button>
       )}
@@ -215,7 +215,7 @@ export function ChatWidget() {
                 <Sparkles size={16} />
               </div>
               <div>
-                <p className="text-sm font-semibold leading-tight">Jin</p>
+                <p className="text-sm font-semibold leading-tight">CJ RealEstate Agent</p>
                 <p className="text-[10px] text-paper/60 uppercase tracking-[0.14em] leading-tight">
                   {t.youAre} CJ Concierge
                 </p>
