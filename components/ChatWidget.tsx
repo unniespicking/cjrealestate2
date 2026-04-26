@@ -8,6 +8,7 @@ import { pushSlackPost } from "@/lib/demo-events";
 type Msg = { role: "user" | "bot"; text: string; chips?: string[] };
 type Lang = "EN" | "KO" | "ZH";
 type Status = "active" | "ended";
+type Intent = "buy" | "sell" | "lease" | "inspect";
 
 const MAX_USER_MESSAGES = 25;
 const END_TOKEN = /\[END_CONVERSATION\]/i;
@@ -31,6 +32,19 @@ const dict = {
     endedNote: "This conversation is closed.",
     reset: "Start over",
     fallback: "Sorry, something went wrong. Please try again.",
+    formPrompt: "Great — please share a few details so a CJ agent can follow up properly.",
+    formName: "Name",
+    formEmail: "Email",
+    formPhone: "Phone",
+    formSubmit: "Continue",
+    formNamePh: "Your full name",
+    formEmailPh: "you@example.com",
+    formPhonePh: "04xx xxx xxx",
+    formError: "Please fill in name, email, and phone.",
+    intentBuy: "buying a property",
+    intentSell: "selling a property",
+    intentLease: "renting a property",
+    intentInspect: "booking an inspection",
   },
   KO: {
     openerGreeting:
@@ -50,6 +64,19 @@ const dict = {
     endedNote: "대화가 종료되었습니다.",
     reset: "새로 시작",
     fallback: "죄송합니다. 잠시 후 다시 시도해 주세요.",
+    formPrompt: "알겠습니다 — CJ 담당자가 정확히 안내드릴 수 있도록 연락처를 남겨주세요.",
+    formName: "이름",
+    formEmail: "이메일",
+    formPhone: "전화번호",
+    formSubmit: "계속",
+    formNamePh: "성함",
+    formEmailPh: "you@example.com",
+    formPhonePh: "010-0000-0000",
+    formError: "이름, 이메일, 전화번호를 모두 입력해 주세요.",
+    intentBuy: "매매",
+    intentSell: "매도",
+    intentLease: "임대",
+    intentInspect: "오픈 인스펙션 예약",
   },
   ZH: {
     openerGreeting:
@@ -68,8 +95,48 @@ const dict = {
     endedNote: "对话已结束。",
     reset: "重新开始",
     fallback: "抱歉,出了点问题。请稍后再试。",
+    formPrompt: "好的 — 请留下您的联系方式,以便CJ经纪人为您跟进。",
+    formName: "姓名",
+    formEmail: "邮箱",
+    formPhone: "电话",
+    formSubmit: "继续",
+    formNamePh: "您的姓名",
+    formEmailPh: "you@example.com",
+    formPhonePh: "0400 000 000",
+    formError: "请填写姓名、邮箱和电话。",
+    intentBuy: "买房",
+    intentSell: "卖房",
+    intentLease: "租房",
+    intentInspect: "预约看房",
   },
 } satisfies Record<Lang, Record<string, string>>;
+
+function intentLabel(lang: Lang, intent: Intent) {
+  const t = dict[lang];
+  return { buy: t.intentBuy, sell: t.intentSell, lease: t.intentLease, inspect: t.intentInspect }[intent];
+}
+
+function buildIntroMessage(lang: Lang, intent: Intent, name: string, email: string, phone: string) {
+  const intentText = intentLabel(lang, intent);
+  if (lang === "KO") {
+    return `${intentText} 관련해서 문의드려요. 이름: ${name}, 이메일: ${email}, 전화: ${phone}.`;
+  }
+  if (lang === "ZH") {
+    return `我想${intentText}。我的姓名是${name},邮箱${email},电话${phone}。`;
+  }
+  return `Hi, I'd like help with ${intentText}. My name is ${name}, email ${email}, phone ${phone}.`;
+}
+
+function buildThanksMessage(lang: Lang, intent: Intent, name: string) {
+  const intentText = intentLabel(lang, intent);
+  if (lang === "KO") {
+    return `${name}님, 감사합니다! 담당자에게 전달드릴게요. ${intentText} 관련해서 어떻게 도와드릴까요?`;
+  }
+  if (lang === "ZH") {
+    return `${name},谢谢您!我们的经纪人会尽快与您联系。关于${intentText},请问有什么可以帮您的?`;
+  }
+  return `Thanks, ${name}! A CJ agent will follow up shortly. In the meantime, how can I help you with ${intentText}?`;
+}
 
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
@@ -78,6 +145,11 @@ export function ChatWidget() {
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [status, setStatus] = useState<Status>("active");
+  const [pendingIntent, setPendingIntent] = useState<Intent | null>(null);
+  const [formName, setFormName] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [formPhone, setFormPhone] = useState("");
+  const [formError, setFormError] = useState(false);
   const savedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -101,7 +173,7 @@ export function ChatWidget() {
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, thinking]);
+  }, [messages, thinking, pendingIntent]);
 
   const finalize = (msgs: Msg[]) => {
     if (savedRef.current) return;
@@ -133,8 +205,37 @@ export function ChatWidget() {
       .catch(() => {});
   };
 
+  const resetForm = () => {
+    setPendingIntent(null);
+    setFormName("");
+    setFormEmail("");
+    setFormPhone("");
+    setFormError(false);
+  };
+
+  const handleChip = (chipText: string) => {
+    if (status === "ended" || thinking || pendingIntent) return;
+    const chipIntentMap: Record<string, Intent> = {
+      [t.chipBuy]: "buy",
+      [t.chipSell]: "sell",
+      [t.chipLease]: "lease",
+      [t.chipInspect]: "inspect",
+    };
+    const intent = chipIntentMap[chipText];
+    if (intent) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", text: chipText },
+        { role: "bot", text: t.formPrompt },
+      ]);
+      setPendingIntent(intent);
+      return;
+    }
+    void send(chipText);
+  };
+
   const send = async (text: string) => {
-    if (!text.trim() || status === "ended" || thinking) return;
+    if (!text.trim() || status === "ended" || thinking || pendingIntent) return;
 
     const newMsgs: Msg[] = [...messages, { role: "user", text: text.trim() }];
     setMessages(newMsgs);
@@ -142,7 +243,6 @@ export function ChatWidget() {
 
     const newUserCount = newMsgs.filter((m) => m.role === "user").length;
     if (newUserCount >= MAX_USER_MESSAGES) {
-      // Hard cap reached — wrap up without further Gemini call.
       const ended: Msg[] = [...newMsgs, { role: "bot", text: t.capReached }];
       setMessages(ended);
       setStatus("ended");
@@ -180,6 +280,26 @@ export function ChatWidget() {
     }
   };
 
+  const submitLeadForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingIntent || thinking) return;
+    const name = formName.trim();
+    const email = formEmail.trim();
+    const phone = formPhone.trim();
+    if (!name || !email || !phone) {
+      setFormError(true);
+      return;
+    }
+    const intro = buildIntroMessage(lang, pendingIntent, name, email, phone);
+    const thanks = buildThanksMessage(lang, pendingIntent, name);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", text: intro },
+      { role: "bot", text: thanks },
+    ]);
+    resetForm();
+  };
+
   const closeWidget = () => {
     if (status === "active" && userMessageCount >= 1) {
       finalize(messages);
@@ -192,6 +312,7 @@ export function ChatWidget() {
     setStatus("active");
     savedRef.current = false;
     setInput("");
+    resetForm();
   };
 
   return (
@@ -229,6 +350,7 @@ export function ChatWidget() {
                   setMessages([]);
                   setStatus("active");
                   savedRef.current = false;
+                  resetForm();
                 }}
                 className="bg-transparent text-xs border border-paper/20 px-1.5 py-0.5 focus:outline-none"
               >
@@ -255,12 +377,12 @@ export function ChatWidget() {
                   )}
                 >
                   {m.text}
-                  {m.chips && status === "active" && (
+                  {m.chips && status === "active" && !pendingIntent && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {m.chips.map((c, j) => (
                         <button
                           key={j}
-                          onClick={() => send(c)}
+                          onClick={() => handleChip(c)}
                           className="bg-paper border border-ink/15 text-xs px-2.5 py-1 hover:border-copper hover:text-copper transition"
                         >
                           {c}
@@ -300,29 +422,74 @@ export function ChatWidget() {
             )}
           </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send(input);
-            }}
-            className="border-t border-ink/10 p-3 flex gap-2"
-          >
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={status === "ended" ? t.endedNote : t.placeholder}
-              disabled={status === "ended" || thinking}
-              className="flex-1 text-sm px-3 py-2.5 bg-paper-warm border-0 focus:outline-none disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={status === "ended" || thinking}
-              className="bg-ink text-paper px-4 hover:bg-copper transition disabled:opacity-30"
+          {pendingIntent ? (
+            <form
+              onSubmit={submitLeadForm}
+              className="border-t border-ink/10 p-3 flex flex-col gap-2 bg-paper-warm"
             >
-              <Send size={15} />
-            </button>
-          </form>
+              <input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder={t.formNamePh}
+                aria-label={t.formName}
+                disabled={thinking}
+                className="text-sm px-3 py-2 bg-paper border border-ink/15 focus:outline-none focus:border-copper disabled:opacity-50"
+              />
+              <input
+                type="email"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                placeholder={t.formEmailPh}
+                aria-label={t.formEmail}
+                disabled={thinking}
+                className="text-sm px-3 py-2 bg-paper border border-ink/15 focus:outline-none focus:border-copper disabled:opacity-50"
+              />
+              <input
+                type="tel"
+                value={formPhone}
+                onChange={(e) => setFormPhone(e.target.value)}
+                placeholder={t.formPhonePh}
+                aria-label={t.formPhone}
+                disabled={thinking}
+                className="text-sm px-3 py-2 bg-paper border border-ink/15 focus:outline-none focus:border-copper disabled:opacity-50"
+              />
+              {formError && (
+                <p className="text-[11px] text-copper">{t.formError}</p>
+              )}
+              <button
+                type="submit"
+                disabled={thinking}
+                className="bg-ink text-paper py-2 text-sm hover:bg-copper transition disabled:opacity-30"
+              >
+                {t.formSubmit}
+              </button>
+            </form>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                send(input);
+              }}
+              className="border-t border-ink/10 p-3 flex gap-2"
+            >
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={status === "ended" ? t.endedNote : t.placeholder}
+                disabled={status === "ended" || thinking}
+                className="flex-1 text-sm px-3 py-2.5 bg-paper-warm border-0 focus:outline-none disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={status === "ended" || thinking}
+                className="bg-ink text-paper px-4 hover:bg-copper transition disabled:opacity-30"
+              >
+                <Send size={15} />
+              </button>
+            </form>
+          )}
           <div className="px-3 pb-2 flex items-center justify-between text-[10px] text-ink-subtle">
             <span>{t.footer}</span>
             <span className={clsx(userMessageCount >= 20 && "text-copper font-medium")}>
