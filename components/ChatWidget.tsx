@@ -5,13 +5,32 @@ import { X, Send, Sparkles, RotateCcw } from "lucide-react";
 import clsx from "clsx";
 import { pushSlackPost } from "@/lib/demo-events";
 
-type Msg = { role: "user" | "bot"; text: string; chips?: string[] };
+type ChipKind = "intent" | "topic";
+type Msg = { role: "user" | "bot"; text: string; chips?: string[]; chipKind?: ChipKind };
 type Lang = "EN" | "KO" | "ZH";
 type Status = "active" | "ended";
 type Intent = "buy" | "sell" | "lease" | "inspect";
+type TenantPhase = null | "form" | "topic" | "detail";
+type TenantTopic =
+  | "maintenance"
+  | "renewal"
+  | "payment"
+  | "bond"
+  | "vacate"
+  | "inspection"
+  | "other";
 
 const MAX_USER_MESSAGES = 25;
 const END_TOKEN = /\[END_CONVERSATION\]/i;
+const TOPIC_KEYS: TenantTopic[] = [
+  "maintenance",
+  "renewal",
+  "payment",
+  "bond",
+  "vacate",
+  "inspection",
+  "other",
+];
 
 const dict = {
   EN: {
@@ -33,18 +52,31 @@ const dict = {
     reset: "Start over",
     fallback: "Sorry, something went wrong. Please try again.",
     formPrompt: "Great — please share a few details so a CJ agent can follow up properly.",
+    tenantFormPrompt: "Sure — please share your details so a CJ property manager can pick this up.",
     formName: "Name",
     formEmail: "Email",
     formPhone: "Phone",
+    formAddress: "Current address",
     formSubmit: "Continue",
     formNamePh: "Your full name",
     formEmailPh: "you@example.com",
     formPhonePh: "04xx xxx xxx",
+    formAddressPh: "e.g. Apt 802 / 8 Footbridge Blvd, Wentworth Point",
     formError: "Please fill in name, email, and phone.",
+    formErrorTenant: "Please fill in name, email, phone, and address.",
     intentBuy: "buying a property",
     intentSell: "selling a property",
     intentLease: "renting a property",
     intentInspect: "booking an inspection",
+    topic_maintenance: "Maintenance & repairs",
+    topic_renewal: "Lease renewal",
+    topic_payment: "Rent payment",
+    topic_bond: "Bond refund",
+    topic_vacate: "Notice to vacate",
+    topic_inspection: "Routine inspection",
+    topic_other: "Other tenancy matter",
+    pickTopicPlaceholder: "Please pick an option above…",
+    detailPlaceholder: "Describe your situation in a few sentences…",
   },
   KO: {
     openerGreeting:
@@ -65,18 +97,31 @@ const dict = {
     reset: "새로 시작",
     fallback: "죄송합니다. 잠시 후 다시 시도해 주세요.",
     formPrompt: "알겠습니다 — CJ 담당자가 정확히 안내드릴 수 있도록 연락처를 남겨주세요.",
+    tenantFormPrompt: "알겠습니다 — CJ 부동산 관리자가 도움드릴 수 있도록 정보를 남겨주세요.",
     formName: "이름",
     formEmail: "이메일",
     formPhone: "전화번호",
+    formAddress: "현재 거주 주소",
     formSubmit: "계속",
     formNamePh: "성함",
     formEmailPh: "you@example.com",
     formPhonePh: "010-0000-0000",
+    formAddressPh: "예) Apt 802 / 8 Footbridge Blvd, Wentworth Point",
     formError: "이름, 이메일, 전화번호를 모두 입력해 주세요.",
+    formErrorTenant: "이름, 이메일, 전화번호, 주소를 모두 입력해 주세요.",
     intentBuy: "매매",
     intentSell: "매도",
     intentLease: "임대",
     intentInspect: "오픈 인스펙션 예약",
+    topic_maintenance: "시설 보수·유지",
+    topic_renewal: "임대 계약 갱신",
+    topic_payment: "임차료 납부",
+    topic_bond: "보증금 환불",
+    topic_vacate: "퇴거 통지",
+    topic_inspection: "정기 점검",
+    topic_other: "기타 임차 관련 사항",
+    pickTopicPlaceholder: "위 옵션 중 하나를 선택해 주세요…",
+    detailPlaceholder: "상황을 자세히 설명해 주세요…",
   },
   ZH: {
     openerGreeting:
@@ -96,24 +141,41 @@ const dict = {
     reset: "重新开始",
     fallback: "抱歉,出了点问题。请稍后再试。",
     formPrompt: "好的 — 请留下您的联系方式,以便CJ经纪人为您跟进。",
+    tenantFormPrompt: "好的 — 请留下您的信息,以便CJ物业经理为您跟进。",
     formName: "姓名",
     formEmail: "邮箱",
     formPhone: "电话",
+    formAddress: "当前居住地址",
     formSubmit: "继续",
     formNamePh: "您的姓名",
     formEmailPh: "you@example.com",
     formPhonePh: "0400 000 000",
+    formAddressPh: "例如:Apt 802 / 8 Footbridge Blvd, Wentworth Point",
     formError: "请填写姓名、邮箱和电话。",
+    formErrorTenant: "请填写姓名、邮箱、电话和地址。",
     intentBuy: "买房",
     intentSell: "卖房",
     intentLease: "租房",
     intentInspect: "预约看房",
+    topic_maintenance: "维修保养",
+    topic_renewal: "续租",
+    topic_payment: "租金支付",
+    topic_bond: "押金退还",
+    topic_vacate: "退租通知",
+    topic_inspection: "例行检查",
+    topic_other: "其他租赁事宜",
+    pickTopicPlaceholder: "请从上方选择一项…",
+    detailPlaceholder: "请详细描述您的情况…",
   },
 } satisfies Record<Lang, Record<string, string>>;
 
 function intentLabel(lang: Lang, intent: Intent) {
   const t = dict[lang];
   return { buy: t.intentBuy, sell: t.intentSell, lease: t.intentLease, inspect: t.intentInspect }[intent];
+}
+
+function topicLabel(lang: Lang, topic: TenantTopic) {
+  return dict[lang][`topic_${topic}` as const];
 }
 
 function buildIntroMessage(lang: Lang, intent: Intent, name: string, email: string, phone: string) {
@@ -138,6 +200,72 @@ function buildThanksMessage(lang: Lang, intent: Intent, name: string) {
   return `Thanks, ${name}! A CJ agent will follow up shortly. In the meantime, how can I help you with ${intentText}?`;
 }
 
+function buildTenantIntro(
+  lang: Lang,
+  name: string,
+  email: string,
+  phone: string,
+  address: string
+) {
+  if (lang === "KO") {
+    return `현재 거주 중인 임차인입니다. 이름: ${name}, 이메일: ${email}, 전화: ${phone}, 주소: ${address}.`;
+  }
+  if (lang === "ZH") {
+    return `我是现有租户。姓名:${name},邮箱:${email},电话:${phone},地址:${address}。`;
+  }
+  return `I'm a current tenant. Name: ${name}, email: ${email}, phone: ${phone}, address: ${address}.`;
+}
+
+function buildTenantTopicPrompt(lang: Lang, name: string) {
+  if (lang === "KO") {
+    return `${name}님, 감사합니다! 어떤 상황에 해당하시나요? 아래에서 선택해 주세요.`;
+  }
+  if (lang === "ZH") {
+    return `${name},谢谢!以下哪一项最符合您的情况?`;
+  }
+  return `Thanks, ${name}! Which of these best describes your situation?`;
+}
+
+function buildTenantDetailPrompt(lang: Lang, topic: string) {
+  if (lang === "KO") {
+    return `「${topic}」 관련해서 자세히 설명해 주시겠어요?`;
+  }
+  if (lang === "ZH") {
+    return `请详细描述一下您关于「${topic}」的情况。`;
+  }
+  return `Could you describe your "${topic}" situation in a few sentences?`;
+}
+
+function buildTenantClosePolite(lang: Lang) {
+  if (lang === "KO") {
+    return "자세히 알려주셔서 감사합니다. 담당 매니저가 곧 연락드릴 거예요. 좋은 하루 보내세요!";
+  }
+  if (lang === "ZH") {
+    return "感谢您提供详细信息。CJ物业经理会尽快与您联系。祝您愉快!";
+  }
+  return "Thanks for the details. We've logged everything and a CJ property manager will reach out shortly. Have a great day!";
+}
+
+function buildTenantOffTopicNudge(lang: Lang, topic: string) {
+  if (lang === "KO") {
+    return `방금 말씀하신 내용이 「${topic}」와 관련 없어 보여요. 「${topic}」 상황을 구체적으로 알려주시겠어요?`;
+  }
+  if (lang === "ZH") {
+    return `您刚才的内容似乎与「${topic}」无关,可以具体描述一下「${topic}」的情况吗?`;
+  }
+  return `That doesn't seem related to "${topic}". Could you describe your "${topic}" situation specifically?`;
+}
+
+function buildTenantCloseMismatch(lang: Lang, topic: string) {
+  if (lang === "KO") {
+    return `남겨주신 정보가 선택하신 「${topic}」과 맞지 않는 것 같습니다. 대화를 종료하겠습니다 — 추가 문의는 CJ에 직접 연락 주세요.`;
+  }
+  if (lang === "ZH") {
+    return `您提供的信息似乎与所选的「${topic}」不符。我们将结束本次对话 — 如需进一步帮助,请直接联系CJ。`;
+  }
+  return `It seems the information you've shared doesn't match the "${topic}" topic you selected. We'll close this conversation — please contact CJ directly if you'd like to continue.`;
+}
+
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [lang, setLang] = useState<Lang>("EN");
@@ -146,15 +274,22 @@ export function ChatWidget() {
   const [thinking, setThinking] = useState(false);
   const [status, setStatus] = useState<Status>("active");
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null);
+  const [tenantPhase, setTenantPhase] = useState<TenantPhase>(null);
+  const [tenantTopic, setTenantTopic] = useState<TenantTopic | null>(null);
+  const [tenantOffTopic, setTenantOffTopic] = useState(0);
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPhone, setFormPhone] = useState("");
+  const [formAddress, setFormAddress] = useState("");
   const [formError, setFormError] = useState(false);
   const savedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const t = dict[lang];
   const userMessageCount = messages.filter((m) => m.role === "user").length;
+  const isTenantForm = tenantPhase === "form";
+  const isLeadForm = pendingIntent !== null;
+  const showForm = isLeadForm || isTenantForm;
 
   useEffect(() => {
     if (open && messages.length === 0) {
@@ -163,6 +298,7 @@ export function ChatWidget() {
           role: "bot",
           text: t.openerGreeting,
           chips: [t.chipBuy, t.chipSell, t.chipLease, t.chipTenant, t.chipInspect],
+          chipKind: "intent",
         },
       ]);
     }
@@ -173,7 +309,7 @@ export function ChatWidget() {
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, thinking, pendingIntent]);
+  }, [messages, thinking, pendingIntent, tenantPhase]);
 
   const finalize = (msgs: Msg[]) => {
     if (savedRef.current) return;
@@ -207,14 +343,27 @@ export function ChatWidget() {
 
   const resetForm = () => {
     setPendingIntent(null);
+    setTenantPhase(null);
+    setTenantTopic(null);
+    setTenantOffTopic(0);
     setFormName("");
     setFormEmail("");
     setFormPhone("");
+    setFormAddress("");
     setFormError(false);
   };
 
   const handleChip = (chipText: string) => {
-    if (status === "ended" || thinking || pendingIntent) return;
+    if (status === "ended" || thinking || pendingIntent || tenantPhase) return;
+    if (chipText === t.chipTenant) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", text: chipText },
+        { role: "bot", text: t.tenantFormPrompt },
+      ]);
+      setTenantPhase("form");
+      return;
+    }
     const chipIntentMap: Record<string, Intent> = {
       [t.chipBuy]: "buy",
       [t.chipSell]: "sell",
@@ -234,12 +383,31 @@ export function ChatWidget() {
     void send(chipText);
   };
 
-  const send = async (text: string) => {
-    if (!text.trim() || status === "ended" || thinking || pendingIntent) return;
+  const handleTopic = (topicText: string) => {
+    if (tenantPhase !== "topic" || thinking) return;
+    const topicKey = TOPIC_KEYS.find((k) => topicLabel(lang, k) === topicText);
+    if (!topicKey) return;
+    setTenantTopic(topicKey);
+    setTenantPhase("detail");
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", text: topicText },
+      { role: "bot", text: buildTenantDetailPrompt(lang, topicText) },
+    ]);
+  };
 
-    const newMsgs: Msg[] = [...messages, { role: "user", text: text.trim() }];
+  const send = async (text: string) => {
+    if (!text.trim() || status === "ended" || thinking || showForm) return;
+
+    const trimmed = text.trim();
+    const newMsgs: Msg[] = [...messages, { role: "user", text: trimmed }];
     setMessages(newMsgs);
     setInput("");
+
+    if (tenantPhase === "detail" && tenantTopic) {
+      await handleTenantDetail(trimmed, newMsgs);
+      return;
+    }
 
     const newUserCount = newMsgs.filter((m) => m.role === "user").length;
     if (newUserCount >= MAX_USER_MESSAGES) {
@@ -280,6 +448,57 @@ export function ChatWidget() {
     }
   };
 
+  const handleTenantDetail = async (message: string, msgsAfterUser: Msg[]) => {
+    if (!tenantTopic) return;
+    const topicText = topicLabel(lang, tenantTopic);
+    setThinking(true);
+    let relevant = true;
+    try {
+      const r = await fetch("/api/tenant-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topicText, message }),
+      });
+      const data = await r.json();
+      relevant = data?.relevant !== false;
+    } catch {
+      relevant = true;
+    }
+
+    if (relevant) {
+      const closing: Msg[] = [
+        ...msgsAfterUser,
+        { role: "bot", text: buildTenantClosePolite(lang) },
+      ];
+      setMessages(closing);
+      setStatus("ended");
+      setThinking(false);
+      finalize(closing);
+      return;
+    }
+
+    const nextOffTopic = tenantOffTopic + 1;
+    if (nextOffTopic >= 2) {
+      const closing: Msg[] = [
+        ...msgsAfterUser,
+        { role: "bot", text: buildTenantCloseMismatch(lang, topicText) },
+      ];
+      setMessages(closing);
+      setStatus("ended");
+      setTenantOffTopic(nextOffTopic);
+      setThinking(false);
+      finalize(closing);
+      return;
+    }
+
+    setTenantOffTopic(nextOffTopic);
+    setMessages([
+      ...msgsAfterUser,
+      { role: "bot", text: buildTenantOffTopicNudge(lang, topicText) },
+    ]);
+    setThinking(false);
+  };
+
   const submitLeadForm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pendingIntent || thinking) return;
@@ -300,6 +519,37 @@ export function ChatWidget() {
     resetForm();
   };
 
+  const submitTenantForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (tenantPhase !== "form" || thinking) return;
+    const name = formName.trim();
+    const email = formEmail.trim();
+    const phone = formPhone.trim();
+    const address = formAddress.trim();
+    if (!name || !email || !phone || !address) {
+      setFormError(true);
+      return;
+    }
+    const intro = buildTenantIntro(lang, name, email, phone, address);
+    const topicChips = TOPIC_KEYS.map((k) => topicLabel(lang, k));
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", text: intro },
+      {
+        role: "bot",
+        text: buildTenantTopicPrompt(lang, name),
+        chips: topicChips,
+        chipKind: "topic",
+      },
+    ]);
+    setTenantPhase("topic");
+    setFormName("");
+    setFormEmail("");
+    setFormPhone("");
+    setFormAddress("");
+    setFormError(false);
+  };
+
   const closeWidget = () => {
     if (status === "active" && userMessageCount >= 1) {
       finalize(messages);
@@ -314,6 +564,17 @@ export function ChatWidget() {
     setInput("");
     resetForm();
   };
+
+  const inputDisabled =
+    status === "ended" || thinking || tenantPhase === "topic";
+  const inputPlaceholder =
+    status === "ended"
+      ? t.endedNote
+      : tenantPhase === "topic"
+      ? t.pickTopicPlaceholder
+      : tenantPhase === "detail"
+      ? t.detailPlaceholder
+      : t.placeholder;
 
   return (
     <>
@@ -365,34 +626,47 @@ export function ChatWidget() {
           </div>
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-3">
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={clsx("flex", m.role === "user" ? "justify-end" : "justify-start")}
-              >
+            {messages.map((m, i) => {
+              const kind = m.chipKind ?? "intent";
+              const showIntentChips =
+                kind === "intent" &&
+                status === "active" &&
+                !pendingIntent &&
+                tenantPhase === null;
+              const showTopicChips =
+                kind === "topic" && tenantPhase === "topic";
+              const showChips = m.chips && (showIntentChips || showTopicChips);
+              return (
                 <div
-                  className={clsx(
-                    "max-w-[85%] px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
-                    m.role === "user" ? "bg-ink text-paper" : "bg-stone text-ink"
-                  )}
+                  key={i}
+                  className={clsx("flex", m.role === "user" ? "justify-end" : "justify-start")}
                 >
-                  {m.text}
-                  {m.chips && status === "active" && !pendingIntent && (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {m.chips.map((c, j) => (
-                        <button
-                          key={j}
-                          onClick={() => handleChip(c)}
-                          className="bg-paper border border-ink/15 text-xs px-2.5 py-1 hover:border-copper hover:text-copper transition"
-                        >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div
+                    className={clsx(
+                      "max-w-[85%] px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
+                      m.role === "user" ? "bg-ink text-paper" : "bg-stone text-ink"
+                    )}
+                  >
+                    {m.text}
+                    {showChips && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {m.chips!.map((c, j) => (
+                          <button
+                            key={j}
+                            onClick={() =>
+                              kind === "topic" ? handleTopic(c) : handleChip(c)
+                            }
+                            className="bg-paper border border-ink/15 text-xs px-2.5 py-1 hover:border-copper hover:text-copper transition"
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {thinking && (
               <div className="flex justify-start">
@@ -422,7 +696,7 @@ export function ChatWidget() {
             )}
           </div>
 
-          {pendingIntent ? (
+          {isLeadForm ? (
             <form
               onSubmit={submitLeadForm}
               className="border-t border-ink/10 p-3 flex flex-col gap-2 bg-paper-warm"
@@ -465,6 +739,58 @@ export function ChatWidget() {
                 {t.formSubmit}
               </button>
             </form>
+          ) : isTenantForm ? (
+            <form
+              onSubmit={submitTenantForm}
+              className="border-t border-ink/10 p-3 flex flex-col gap-2 bg-paper-warm"
+            >
+              <input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder={t.formNamePh}
+                aria-label={t.formName}
+                disabled={thinking}
+                className="text-sm px-3 py-2 bg-paper border border-ink/15 focus:outline-none focus:border-copper disabled:opacity-50"
+              />
+              <input
+                type="email"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                placeholder={t.formEmailPh}
+                aria-label={t.formEmail}
+                disabled={thinking}
+                className="text-sm px-3 py-2 bg-paper border border-ink/15 focus:outline-none focus:border-copper disabled:opacity-50"
+              />
+              <input
+                type="tel"
+                value={formPhone}
+                onChange={(e) => setFormPhone(e.target.value)}
+                placeholder={t.formPhonePh}
+                aria-label={t.formPhone}
+                disabled={thinking}
+                className="text-sm px-3 py-2 bg-paper border border-ink/15 focus:outline-none focus:border-copper disabled:opacity-50"
+              />
+              <input
+                type="text"
+                value={formAddress}
+                onChange={(e) => setFormAddress(e.target.value)}
+                placeholder={t.formAddressPh}
+                aria-label={t.formAddress}
+                disabled={thinking}
+                className="text-sm px-3 py-2 bg-paper border border-ink/15 focus:outline-none focus:border-copper disabled:opacity-50"
+              />
+              {formError && (
+                <p className="text-[11px] text-copper">{t.formErrorTenant}</p>
+              )}
+              <button
+                type="submit"
+                disabled={thinking}
+                className="bg-ink text-paper py-2 text-sm hover:bg-copper transition disabled:opacity-30"
+              >
+                {t.formSubmit}
+              </button>
+            </form>
           ) : (
             <form
               onSubmit={(e) => {
@@ -477,13 +803,13 @@ export function ChatWidget() {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={status === "ended" ? t.endedNote : t.placeholder}
-                disabled={status === "ended" || thinking}
+                placeholder={inputPlaceholder}
+                disabled={inputDisabled}
                 className="flex-1 text-sm px-3 py-2.5 bg-paper-warm border-0 focus:outline-none disabled:opacity-50"
               />
               <button
                 type="submit"
-                disabled={status === "ended" || thinking}
+                disabled={inputDisabled}
                 className="bg-ink text-paper px-4 hover:bg-copper transition disabled:opacity-30"
               >
                 <Send size={15} />
