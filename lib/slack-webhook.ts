@@ -153,9 +153,12 @@ export async function postThreadReply(
   channel_id: string,
   thread_ts: string,
   text: string
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; error?: string }> {
   const botToken = process.env.SLACK_BOT_TOKEN;
-  if (!botToken) return { ok: false };
+  if (!botToken) {
+    console.error("postThreadReply: SLACK_BOT_TOKEN not set");
+    return { ok: false, error: "missing_bot_token" };
+  }
   try {
     const r = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
@@ -166,9 +169,14 @@ export async function postThreadReply(
       body: JSON.stringify({ channel: channel_id, thread_ts, text }),
     });
     const data = await r.json();
-    return { ok: !!data.ok };
-  } catch {
-    return { ok: false };
+    if (!data.ok) {
+      console.error("postThreadReply Slack error:", data.error, "channel:", channel_id, "thread_ts:", thread_ts);
+      return { ok: false, error: data.error };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    console.error("postThreadReply fetch error:", err?.message);
+    return { ok: false, error: err?.message };
   }
 }
 
