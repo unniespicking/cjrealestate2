@@ -1,5 +1,6 @@
 import { NextResponse, after } from "next/server";
 import crypto from "node:crypto";
+import sharp from "sharp";
 import { postThreadReply } from "@/lib/slack-webhook";
 import { describeImage } from "@/lib/gemini-vision";
 import { buildNewsletterPdf, NewsletterForm } from "@/lib/newsletter-pdf";
@@ -219,13 +220,37 @@ async function processNewsletterSubmission(opts: {
   }
 
   await postThreadReply(channel, thread_ts, `🧾 PDF 생성 중...`);
+
+  // pdf-lib only embeds JPEG and PNG. Convert anything else (webp, heic, gif,
+  // avif, …) to JPEG with sharp before passing it on.
+  let imageBytes = dl.bytes;
+  let imageMime = dl.mime;
+  const isJpegOrPng =
+    imageMime.includes("jpeg") || imageMime.includes("jpg") || imageMime.includes("png");
+  if (!isJpegOrPng) {
+    try {
+      console.log("newsletter: converting", imageMime, "→ image/jpeg");
+      const out = await sharp(dl.bytes).jpeg({ quality: 88 }).toBuffer();
+      imageBytes = out;
+      imageMime = "image/jpeg";
+    } catch (err: any) {
+      console.error("newsletter: sharp convert failed:", err?.message);
+      await postThreadReply(
+        channel,
+        thread_ts,
+        `❌ 이미지 변환 실패 (${dl.mime}): ${err?.message ?? "unknown"}`
+      );
+      return;
+    }
+  }
+
   let pdfBytes: Uint8Array;
   try {
     pdfBytes = await buildNewsletterPdf({
       form,
       body,
-      imageBytes: dl.bytes,
-      imageMime: dl.mime,
+      imageBytes,
+      imageMime,
     });
   } catch (err: any) {
     console.error("newsletter: pdf build failed:", err?.message);
