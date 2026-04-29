@@ -1,6 +1,12 @@
 import "server-only";
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import { PDFDocument, rgb } from "pdf-lib";
+import * as fontkitNs from "@pdf-lib/fontkit";
+
+// @pdf-lib/fontkit ships both a default export (ESM build) and module-level
+// exports (CJS/UMD build). Depending on whether the bundler hits the `module`
+// or `main` field we may receive either shape — normalize to the actual
+// fontkit object before passing it to registerFontkit.
+const fontkit: any = (fontkitNs as any).default ?? fontkitNs;
 
 // Builds a single-page A4 newsletter PDF combining the property photo,
 // the user-submitted facts, and the Gemini-generated body copy.
@@ -61,15 +67,32 @@ export async function buildNewsletterPdf(opts: {
 }): Promise<Uint8Array> {
   const { form, body, imageBytes, imageMime } = opts;
 
-  const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit);
+  if (!body || typeof body !== "string") {
+    throw new Error(`pdf: body missing (got ${typeof body})`);
+  }
+  if (!imageBytes || imageBytes.byteLength === 0) {
+    throw new Error("pdf: imageBytes empty");
+  }
 
-  const [regularBuf, boldBuf] = await Promise.all([
-    fetchFont(KOREAN_FONT_URL, false),
-    fetchFont(KOREAN_FONT_BOLD_URL, true),
-  ]);
-  const regular = await pdf.embedFont(regularBuf);
-  const bold = await pdf.embedFont(boldBuf);
+  const pdf = await PDFDocument.create();
+  try {
+    pdf.registerFontkit(fontkit);
+  } catch (err: any) {
+    throw new Error(`pdf: registerFontkit failed (${err?.message ?? err})`);
+  }
+
+  let regular: any;
+  let bold: any;
+  try {
+    const [regularBuf, boldBuf] = await Promise.all([
+      fetchFont(KOREAN_FONT_URL, false),
+      fetchFont(KOREAN_FONT_BOLD_URL, true),
+    ]);
+    regular = await pdf.embedFont(new Uint8Array(regularBuf));
+    bold = await pdf.embedFont(new Uint8Array(boldBuf));
+  } catch (err: any) {
+    throw new Error(`pdf: font load failed (${err?.message ?? err})`);
+  }
 
   // A4 portrait: 595 x 842 points
   const page = pdf.addPage([595, 842]);
@@ -94,17 +117,29 @@ export async function buildNewsletterPdf(opts: {
   }
   cursorY -= 4;
 
-  // Image
-  let image;
-  if (imageMime.includes("png")) {
-    image = await pdf.embedPng(imageBytes);
-  } else {
-    try {
-      image = await pdf.embedJpg(imageBytes);
-    } catch {
-      image = await pdf.embedPng(imageBytes);
+  // Image. pdf-lib only handles JPEG and PNG natively; other formats (HEIC,
+  // WebP, etc.) bubble a clear error so the caller can surface it.
+  const imgBytes = new Uint8Array(imageBytes);
+  let image: any;
+  try {
+    if (imageMime.includes("png")) {
+      image = await pdf.embedPng(imgBytes);
+    } else if (imageMime.includes("jpeg") || imageMime.includes("jpg")) {
+      image = await pdf.embedJpg(imgBytes);
+    } else {
+      // Unknown mime — try both, prefer JPEG.
+      try {
+        image = await pdf.embedJpg(imgBytes);
+      } catch {
+        image = await pdf.embedPng(imgBytes);
+      }
     }
+  } catch (err: any) {
+    throw new Error(
+      `pdf: unsupported image format (${imageMime}). pdf-lib only supports JPEG/PNG. ${err?.message ?? ""}`
+    );
   }
+  if (!image) throw new Error("pdf: image embed returned undefined");
   const maxImgW = width - margin * 2;
   const maxImgH = 280;
   const scale = Math.min(maxImgW / image.width, maxImgH / image.height);
