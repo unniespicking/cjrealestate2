@@ -20,10 +20,14 @@ export type NewsletterForm = {
   agent?: string;
 };
 
+// Nanum Gothic (TTF). Pretendard ships only as OTF/CFF, which @pdf-lib/fontkit
+// chokes on with "Cannot read properties of undefined (reading 'topDict')".
+// fontkit's TTF parser is solid, so we switch to NanumGothic TTF served via
+// jsdelivr (mirroring the google/fonts GitHub repo).
 const KOREAN_FONT_URL =
-  "https://cdn.jsdelivr.net/gh/orioncactus/pretendard/packages/pretendard/dist/public/static/Pretendard-Regular.otf";
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nanumgothic/NanumGothic-Regular.ttf";
 const KOREAN_FONT_BOLD_URL =
-  "https://cdn.jsdelivr.net/gh/orioncactus/pretendard/packages/pretendard/dist/public/static/Pretendard-Bold.otf";
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nanumgothic/NanumGothic-Bold.ttf";
 
 let regularFontCache: ArrayBuffer | null = null;
 let boldFontCache: ArrayBuffer | null = null;
