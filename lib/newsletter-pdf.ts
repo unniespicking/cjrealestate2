@@ -87,13 +87,22 @@ export async function buildNewsletterPdf(opts: {
 
   let regular: any;
   let bold: any;
+  console.log("pdf: font urls", { reg: KOREAN_FONT_URL, bold: KOREAN_FONT_BOLD_URL });
   try {
     const [regularBuf, boldBuf] = await Promise.all([
       fetchFont(KOREAN_FONT_URL, false),
       fetchFont(KOREAN_FONT_BOLD_URL, true),
     ]);
+    console.log("pdf: font bytes", {
+      reg: regularBuf.byteLength,
+      bold: boldBuf.byteLength,
+    });
     regular = await pdf.embedFont(new Uint8Array(regularBuf));
     bold = await pdf.embedFont(new Uint8Array(boldBuf));
+    // Force-parse the font now so any topDict/CFF errors surface here, not
+    // later inside drawText where the wrapper wouldn't catch them.
+    regular.widthOfTextAtSize("가", 12);
+    bold.widthOfTextAtSize("가", 12);
   } catch (err: any) {
     throw new Error(`pdf: font load failed (${err?.message ?? err})`);
   }
