@@ -113,19 +113,25 @@ async function handleImageMessage(event: any) {
       const dl = await downloadSlackFile(file.url_private);
       if (!dl) {
         console.error("handleImageMessage: download returned null for", label);
-        await postThreadMessage(channelId, ts, `이미지를 불러오지 못했습니다 (${label}).`);
+        await postThreadMessage(channelId, ts, `⚠️ 이미지를 불러오지 못했습니다 (${label}).`);
         continue;
       }
       console.log("handleImageMessage: downloaded", { bytes: dl.bytes.length, mime: dl.mime });
+
+      await postThreadMessage(channelId, ts, `📤 \`${label}\` Gemini API로 전송 중...`);
+      await postThreadMessage(channelId, ts, `⏳ AI 응답을 기다리는 중...`);
+
       const description = await describeImage(dl.bytes, dl.mime);
       console.log("handleImageMessage: gemini ok, length =", description.length);
+
+      await postThreadMessage(channelId, ts, `✅ AI 분석 완료`);
       await postThreadMessage(channelId, ts, `🖼️ *${label}*\n${description}`);
     } catch (err: any) {
       console.error("gemini analysis failed:", err?.message ?? err);
       await postThreadMessage(
         channelId,
         ts,
-        `이미지 분석 중 오류가 발생했습니다: ${err?.message ?? "unknown"}`
+        `❌ 이미지 분석 실패: ${err?.message ?? "unknown"}`
       );
     }
   }
