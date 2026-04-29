@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import crypto from "node:crypto";
 import { describeImage } from "@/lib/gemini-vision";
 
@@ -103,20 +103,25 @@ async function handleImageMessage(event: any) {
   const ts = event.ts as string;
   const files = (event.files ?? []) as any[];
   const imageFiles = files.filter((f) => typeof f?.mimetype === "string" && f.mimetype.startsWith("image/"));
+  console.log("handleImageMessage: image count =", imageFiles.length);
   if (!imageFiles.length) return;
 
   for (const file of imageFiles) {
     const label = file.name || "image";
+    console.log("handleImageMessage: processing", { name: label, mime: file.mimetype });
     try {
       const dl = await downloadSlackFile(file.url_private);
       if (!dl) {
+        console.error("handleImageMessage: download returned null for", label);
         await postThreadMessage(channelId, ts, `이미지를 불러오지 못했습니다 (${label}).`);
         continue;
       }
+      console.log("handleImageMessage: downloaded", { bytes: dl.bytes.length, mime: dl.mime });
       const description = await describeImage(dl.bytes, dl.mime);
+      console.log("handleImageMessage: gemini ok, length =", description.length);
       await postThreadMessage(channelId, ts, `🖼️ *${label}*\n${description}`);
     } catch (err: any) {
-      console.error("gemini analysis failed:", err?.message);
+      console.error("gemini analysis failed:", err?.message ?? err);
       await postThreadMessage(
         channelId,
         ts,
@@ -176,6 +181,15 @@ export async function POST(req: Request) {
   }
 
   const event = body.event;
+  console.log("slack/events received:", {
+    type: event?.type,
+    subtype: event?.subtype,
+    channel: event?.channel,
+    has_files: Array.isArray(event?.files),
+    file_count: event?.files?.length ?? 0,
+    bot_id: event?.bot_id,
+  });
+
   if (!event || event.type !== "message") {
     return NextResponse.json({ ok: true });
   }
@@ -193,14 +207,21 @@ export async function POST(req: Request) {
   }
 
   const channelName = await getChannelName(event.channel);
+  console.log("slack/events channel resolved:", { id: event.channel, name: channelName, target: TARGET_CHANNEL });
   if (channelName !== TARGET_CHANNEL) {
     return NextResponse.json({ ok: true, skipped: "not target channel" });
   }
 
-  // Slack expects a 200 within 3s. Run the analysis in the background.
-  handleImageMessage(event).catch((err) =>
-    console.error("handleImageMessage error:", err?.message ?? err)
-  );
+  // Slack expects a 200 within 3s. `after` keeps the serverless function alive
+  // for the heavy lifting (Slack download → Gemini → post reply) instead of
+  // killing it the moment we respond.
+  after(async () => {
+    try {
+      await handleImageMessage(event);
+    } catch (err: any) {
+      console.error("handleImageMessage error:", err?.message ?? err);
+    }
+  });
 
   return NextResponse.json({ ok: true });
 }
