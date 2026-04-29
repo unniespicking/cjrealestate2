@@ -1,13 +1,14 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { describeImage } from "@/lib/gemini-vision";
 
-// Slack Events API endpoint. Listens for image uploads in #news-letter-maker
-// and replies in-thread with a Gemini-generated description.
+// Slack Events API endpoint. When an image is uploaded to #news-letter-maker,
+// post a "📋 뉴스레터 만들기" button in-thread. Clicking it opens a modal
+// (handled in /api/slack/interactions) that captures listing data and triggers
+// the Gemini-powered PDF newsletter build.
 //
 // Slack App configuration required:
 //   • Event Subscriptions → Request URL: https://<host>/api/slack/events
-//   • Subscribe to bot events: message.channels, file_shared (optional)
+//   • Subscribe to bot events: message.channels
 //   • Bot Token Scopes: channels:history, channels:read, chat:write, files:read
 //   • Reinstall app to workspace, invite bot to #news-letter-maker
 
@@ -15,7 +16,6 @@ export const runtime = "nodejs";
 
 const TARGET_CHANNEL = process.env.SLACK_NEWSLETTER_CHANNEL || "news-letter-maker";
 
-// Channel id → name cache (events only carry the id).
 const channelNameCache = new Map<string, string>();
 
 async function getChannelName(channelId: string): Promise<string | null> {
@@ -62,26 +62,44 @@ function verifySignature(req: Request, rawBody: string): boolean {
   }
 }
 
-async function downloadSlackFile(
-  urlPrivate: string
-): Promise<{ bytes: Buffer; mime: string } | null> {
-  const botToken = process.env.SLACK_BOT_TOKEN;
-  if (!botToken) return null;
-  const r = await fetch(urlPrivate, {
-    headers: { Authorization: `Bearer ${botToken}` },
-  });
-  if (!r.ok) {
-    console.error("slack file download failed:", r.status, urlPrivate);
-    return null;
-  }
-  const mime = r.headers.get("content-type") || "image/jpeg";
-  const buf = Buffer.from(await r.arrayBuffer());
-  return { bytes: buf, mime };
-}
-
-async function postThreadMessage(channel: string, thread_ts: string, text: string) {
+async function postNewsletterButton(opts: {
+  channel: string;
+  thread_ts: string;
+  fileId: string;
+  fileName: string;
+}) {
   const botToken = process.env.SLACK_BOT_TOKEN;
   if (!botToken) return;
+
+  const buttonValue = JSON.stringify({
+    file_id: opts.fileId,
+    channel: opts.channel,
+    thread_ts: opts.thread_ts,
+  });
+
+  const blocks = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `🏠 *${opts.fileName}* 사진을 받았습니다.\n뉴스레터로 만들려면 아래 버튼을 눌러 매물 정보를 입력해주세요.`,
+      },
+    },
+    {
+      type: "actions",
+      block_id: "newsletter_actions",
+      elements: [
+        {
+          type: "button",
+          action_id: "start_newsletter_form",
+          value: buttonValue,
+          style: "primary",
+          text: { type: "plain_text", text: "📋 뉴스레터 만들기", emoji: true },
+        },
+      ],
+    },
+  ];
+
   try {
     const r = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
@@ -89,55 +107,22 @@ async function postThreadMessage(channel: string, thread_ts: string, text: strin
         "Content-Type": "application/json; charset=utf-8",
         Authorization: `Bearer ${botToken}`,
       },
-      body: JSON.stringify({ channel, thread_ts, text, unfurl_links: false, unfurl_media: false }),
+      body: JSON.stringify({
+        channel: opts.channel,
+        thread_ts: opts.thread_ts,
+        text: "뉴스레터 만들기",
+        blocks,
+        unfurl_links: false,
+        unfurl_media: false,
+      }),
     });
     const data = await r.json();
-    if (!data.ok) console.error("chat.postMessage failed:", data.error);
+    if (!data.ok) console.error("postNewsletterButton failed:", data.error);
   } catch (err: any) {
-    console.error("chat.postMessage error:", err?.message);
+    console.error("postNewsletterButton error:", err?.message);
   }
 }
 
-async function handleImageMessage(event: any) {
-  const channelId = event.channel as string;
-  const ts = event.ts as string;
-  const files = (event.files ?? []) as any[];
-  const imageFiles = files.filter((f) => typeof f?.mimetype === "string" && f.mimetype.startsWith("image/"));
-  console.log("handleImageMessage: image count =", imageFiles.length);
-  if (!imageFiles.length) return;
-
-  for (const file of imageFiles) {
-    const label = file.name || "image";
-    console.log("handleImageMessage: processing", { name: label, mime: file.mimetype });
-    try {
-      const dl = await downloadSlackFile(file.url_private);
-      if (!dl) {
-        console.error("handleImageMessage: download returned null for", label);
-        await postThreadMessage(channelId, ts, `⚠️ 이미지를 불러오지 못했습니다 (${label}).`);
-        continue;
-      }
-      console.log("handleImageMessage: downloaded", { bytes: dl.bytes.length, mime: dl.mime });
-
-      await postThreadMessage(channelId, ts, `📤 \`${label}\` Gemini API로 전송 중...`);
-      await postThreadMessage(channelId, ts, `⏳ AI 응답을 기다리는 중...`);
-
-      const description = await describeImage(dl.bytes, dl.mime);
-      console.log("handleImageMessage: gemini ok, length =", description.length);
-
-      await postThreadMessage(channelId, ts, `✅ AI 분석 완료`);
-      await postThreadMessage(channelId, ts, `🖼️ *${label}*\n${description}`);
-    } catch (err: any) {
-      console.error("gemini analysis failed:", err?.message ?? err);
-      await postThreadMessage(
-        channelId,
-        ts,
-        `❌ 이미지 분석 실패: ${err?.message ?? "unknown"}`
-      );
-    }
-  }
-}
-
-// Naive in-memory dedupe — Slack retries the same event_id on timeouts.
 const seenEventIds = new Set<string>();
 function rememberEvent(id: string | undefined): boolean {
   if (!id) return false;
@@ -173,7 +158,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad JSON" }, { status: 400 });
   }
 
-  // URL verification handshake (during initial Slack App setup).
   if (body?.type === "url_verification") {
     return NextResponse.json({ challenge: body.challenge });
   }
@@ -199,34 +183,32 @@ export async function POST(req: Request) {
   if (!event || event.type !== "message") {
     return NextResponse.json({ ok: true });
   }
-
-  // Ignore the bot's own messages (avoid loops).
   if (event.bot_id || event.subtype === "bot_message") {
     return NextResponse.json({ ok: true });
   }
 
-  const hasImageFiles =
-    Array.isArray(event.files) &&
-    event.files.some((f: any) => typeof f?.mimetype === "string" && f.mimetype.startsWith("image/"));
-  if (!hasImageFiles) {
+  const imageFile = Array.isArray(event.files)
+    ? event.files.find((f: any) => typeof f?.mimetype === "string" && f.mimetype.startsWith("image/"))
+    : null;
+  if (!imageFile) {
     return NextResponse.json({ ok: true });
   }
 
   const channelName = await getChannelName(event.channel);
-  console.log("slack/events channel resolved:", { id: event.channel, name: channelName, target: TARGET_CHANNEL });
+  console.log("slack/events channel resolved:", {
+    id: event.channel,
+    name: channelName,
+    target: TARGET_CHANNEL,
+  });
   if (channelName !== TARGET_CHANNEL) {
     return NextResponse.json({ ok: true, skipped: "not target channel" });
   }
 
-  // Slack expects a 200 within 3s. `after` keeps the serverless function alive
-  // for the heavy lifting (Slack download → Gemini → post reply) instead of
-  // killing it the moment we respond.
-  after(async () => {
-    try {
-      await handleImageMessage(event);
-    } catch (err: any) {
-      console.error("handleImageMessage error:", err?.message ?? err);
-    }
+  await postNewsletterButton({
+    channel: event.channel,
+    thread_ts: event.ts,
+    fileId: imageFile.id,
+    fileName: imageFile.name || "image",
   });
 
   return NextResponse.json({ ok: true });
